@@ -17,21 +17,63 @@ use steamlocate::SteamDir;
 
 struct App {
     items: Vec<(String, u32)>, // (name, app_id)
+    filtered_items: Vec<(String, u32)>,
+    search_query: String,
+    in_search_mode: bool,
+    status_message: String,
     state: ListState,
 }
 
 impl App {
     fn new(items: Vec<(String, u32)>) -> Self {
+        let filtered_items = items.clone();
         Self {
             items,
+            filtered_items,
+            search_query: String::new(),
+            in_search_mode: false,
+            status_message: "Use '/' to search, 'q' to exit.".to_string(),
             state: ListState::default(),
         }
     }
 
+    fn update_filter(&mut self) {
+        self.filtered_items = self
+            .items
+            .iter()
+            .filter(|(name, _)| {
+                name.to_lowercase()
+                    .contains(&self.search_query.to_lowercase())
+            })
+            .cloned()
+            .collect();
+        // Reset selection if out of bounds
+        if let Some(selected) = self.state.selected() {
+            if selected >= self.filtered_items.len() {
+                self.state.select(if self.filtered_items.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
+            }
+        }
+    }
+
+    fn enter_search_mode(&mut self) {
+        self.in_search_mode = true;
+    }
+
+    fn exit_search_mode(&mut self) {
+        self.in_search_mode = false;
+        self.search_query.clear();
+        self.update_filter();
+    }
+
     fn next(&mut self) {
+        let len = self.filtered_items.len();
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= self.items.len() - 1 {
+                if i >= len - 1 {
                     0
                 } else {
                     i + 1
@@ -43,10 +85,11 @@ impl App {
     }
 
     fn previous(&mut self) {
+        let len = self.filtered_items.len();
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.items.len() - 1
+                    len - 1
                 } else {
                     i - 1
                 }
@@ -56,9 +99,9 @@ impl App {
         self.state.select(Some(i));
     }
 
-    fn open_selected(&self, steam_path: &std::path::Path) {
+    fn open_selected(&mut self, steam_path: &std::path::Path) {
         if let Some(i) = self.state.selected() {
-            let app_id = self.items[i].1;
+            let app_id = self.filtered_items[i].1;
             let pfx_path = steam_path
                 .join("steamapps")
                 .join("compatdata")
@@ -66,6 +109,9 @@ impl App {
                 .join("pfx");
             if pfx_path.exists() {
                 let _ = Command::new("xdg-open").arg(&pfx_path).spawn();
+                self.status_message = "Opened prefix folder.".to_string();
+            } else {
+                self.status_message = "Prefix folder does not exist.".to_string();
             }
         }
     }
@@ -103,11 +149,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let size = f.size();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Percentage(94),
+                    Constraint::Length(3),
+                ].as_ref())
                 .split(size);
 
+            let search_title = if app.in_search_mode {
+                "Search (type to search, Enter to exit)"
+            } else {
+                "Search (press '/' to enter search mode)"
+            };
+            let search_block = Block::default()
+                .borders(Borders::ALL)
+                .title(search_title);
+            let search_text = if app.search_query.is_empty() && !app.in_search_mode {
+                "No search query"
+            } else {
+                &app.search_query
+            };
+            let search_paragraph = Paragraph::new(search_text)
+                .block(search_block)
+                .style(Style::default().fg(Color::White));
+
             let list_items: Vec<ListItem> = app
-                .items
+                .filtered_items
                 .iter()
                 .map(|(name, app_id)| {
                     ListItem::new(Span::styled(
@@ -117,31 +184,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect();
 
+            let list_title = format!(
+                "Non-Steam Games with Wine Prefixes ({}/{}, ↑/↓ to navigate, Enter to open, q to quit)",
+                app.filtered_items.len(),
+                app.items.len()
+            );
             let list = List::new(list_items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Non-Steam Games with Wine Prefixes (↑/↓ to navigate, Enter to open, q to quit)"),
-                )
+                .block(Block::default().borders(Borders::ALL).title(list_title))
                 .highlight_style(Style::default().bg(Color::Blue))
                 .highlight_symbol(">> ");
 
-            let footer = Paragraph::new("Press 'q' to exit the application.")
+            let footer = Paragraph::new(app.status_message.as_str())
                 .block(Block::default().borders(Borders::ALL))
                 .style(Style::default().fg(Color::Gray));
 
-            f.render_stateful_widget(list, chunks[0], &mut app.state);
-            f.render_widget(footer, chunks[1]);
+            f.render_widget(search_paragraph, chunks[0]);
+            f.render_stateful_widget(list, chunks[1], &mut app.state);
+            f.render_widget(footer, chunks[2]);
         })?;
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
-                match key.code {
-                    crossterm::event::KeyCode::Char('q') => break,
-                    crossterm::event::KeyCode::Down => app.next(),
-                    crossterm::event::KeyCode::Up => app.previous(),
-                    crossterm::event::KeyCode::Enter => app.open_selected(steam_dir.path()),
-                    _ => {}
+                if app.in_search_mode {
+                    match key.code {
+                        crossterm::event::KeyCode::Enter => app.exit_search_mode(),
+                        crossterm::event::KeyCode::Backspace => {
+                            app.search_query.pop();
+                            app.update_filter();
+                        }
+                        crossterm::event::KeyCode::Char(c) => {
+                            app.search_query.push(c);
+                            app.update_filter();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        crossterm::event::KeyCode::Char('q') => break,
+                        crossterm::event::KeyCode::Char('/') => app.enter_search_mode(),
+                        crossterm::event::KeyCode::Down => app.next(),
+                        crossterm::event::KeyCode::Up => app.previous(),
+                        crossterm::event::KeyCode::Enter => app.open_selected(steam_dir.path()),
+                        _ => {}
+                    }
                 }
             }
         }
