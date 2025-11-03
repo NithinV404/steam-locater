@@ -1,13 +1,14 @@
 # steam-locater
 
-A terminal user interface (TUI) application built with Rust and Ratatui for listing and managing non-Steam games that have Wine prefixes in your Steam installation.
+A terminal user interface (TUI) application built with Rust and Ratatui for listing and managing Steam games and non-Steam games with Wine prefixes in your Steam installation.
 
 ## Features
 
 - Automatically detects your Steam directory using the `steamlocate` library.
-- Lists non-Steam games (shortcuts) that are configured with Wine compatibility tools.
-- Interactive navigation: Use arrow keys to select games, Enter to open the Wine prefix directory in your file manager, and 'q' to quit.
-- Simple, keyboard-driven interface for quick access to game prefixes.
+- Lists Steam games and non-Steam games (shortcuts) that are configured with Wine compatibility tools.
+- Interactive navigation: Use arrow keys to select games, Enter to open the game folder (for Steam games) or Wine prefix directory (for non-Steam games) in your file manager, and 'q' to quit.
+- Non-Steam games are labeled as such in the list.
+- Simple, keyboard-driven interface for quick access to game folders and prefixes.
 
 ## Prerequisites
 
@@ -33,15 +34,15 @@ A terminal user interface (TUI) application built with Rust and Ratatui for list
 
 Run the application from your terminal:
 ```sh
-steam-appid-fetcher
+steam-locater
 ```
 
 ### Controls
 - **↑/↓**: Navigate through the list of games.
-- **Enter**: Open the selected game's Wine prefix directory in your default file manager (using `xdg-open`).
+- **Enter**: Open the selected game's folder (for Steam games) or Wine prefix directory (for non-Steam games) in your default file manager (using `xdg-open`).
 - **q**: Quit the application.
 
-If no non-Steam games with Wine prefixes are found, the application will print a message and exit.
+If no games are found, the application will print a message and exit.
 
 ## Dependencies
 
@@ -55,7 +56,7 @@ If you prefer to build manually:
 ```sh
 cargo build --release
 ```
-The binary will be in `target/release/steam-appid-fetcher`.
+The binary will be in `target/release/steam-locater`.
 
 ## Contributing
 
